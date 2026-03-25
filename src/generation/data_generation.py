@@ -407,26 +407,28 @@ def main():
     workspace = sys.argv[1] if len(sys.argv) > 1 else os.path.join("workspace", "stable")
     dsl_dir   = os.path.join(workspace, "dsl")
 
-    print("[1/4] Loading method...")
-    zz = method_from_file(os.path.join(dsl_dir, "zz_method.dsl"))
-    cfop = method_from_file(os.path.join(dsl_dir, "cfop_method.dsl"))
-    roux = method_from_file(os.path.join(dsl_dir, "roux_method.dsl"))
-    beginners = method_from_file(os.path.join(dsl_dir, "beginners_method.dsl"))
-    petrus = method_from_file(os.path.join(dsl_dir, "petrus_method.dsl"))
-    apb = method_from_file(os.path.join(dsl_dir, "apb.dsl"))
-    methods = [zz, cfop, roux, beginners, petrus, apb]
 
-    print("[2/4] Generating algorithms (20 solves)...")
-    generate_algorithms(methods, num_solves=20, workspace_root=workspace)
+    while True:
+        print("[1/4] Loading method...")
+        zz = method_from_file(os.path.join(dsl_dir, "zz_method.dsl"))
+        cfop = method_from_file(os.path.join(dsl_dir, "cfop_method.dsl"))
+        roux = method_from_file(os.path.join(dsl_dir, "roux_method.dsl"))
+        beginners = method_from_file(os.path.join(dsl_dir, "beginners_method.dsl"))
+        petrus = method_from_file(os.path.join(dsl_dir, "petrus_method.dsl"))
+        apb = method_from_file(os.path.join(dsl_dir, "apb.dsl"))
+        methods = [zz, cfop, roux, beginners, petrus, apb]
 
-    print("[3/4] Generating solves (250 scrambles)...")
-    scrambles = generate_scrambles(250)
-    generate_solves(scrambles, methods, workspace_root=workspace)
+        # print("[2/4] Generating algorithms (20 solves)...")
+        # generate_algorithms(methods, num_solves=20, workspace_root=workspace)
 
-    print("[4/4] Evaluating solves...")
-    evaluate_solves(methods, workspace_root=workspace)
+        print("[3/4] Generating solves (250 scrambles)...")
+        scrambles = generate_scrambles(100)
+        generate_solves(scrambles, methods, workspace_root=workspace)
 
-    print("[DONE]")
+        print("[4/4] Evaluating solves...")
+        evaluate_solves(methods, workspace_root=workspace)
+
+        print("[DONE]")
 
 
 if __name__ == "__main__":

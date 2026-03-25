@@ -1,7 +1,7 @@
 method_name,num_steps,num_groups,num_removes,total_constraints,avg_constraints_per_step,max_constraints_per_step,num_cache_alg_steps,num_free_layer_steps,symmetry_depth,num_symmetry_orientations,num_edge_constraints,num_corner_constraints,num_orientation_constraints,constraint_type_diversity,score
-ZZ,7,1,1,24,3.43,8,2,2,1,0,14,8,2,3,0.019535
-CFOP,7,1,0,22,3.14,8,2,2,1,0,12,8,2,3,
-Roux,6,1,2,16,2.67,6,1,1,1,0,7,4,2,3,
-BEGINNERS,13,2,2,16,1.23,4,0,0,1,0,8,4,2,3,
-PETRUS,7,1,0,23,3.29,8,2,2,1,0,13,8,2,3,
-APB,6,0,1,23,3.83,8,3,3,1,4,12,8,3,3,
+ZZ,7,1,1,24,3.43,8,2,2,1,0,14,8,2,3,0.019581
+CFOP,7,1,0,22,3.14,8,2,2,1,0,12,8,2,3,0.01935
+Roux,6,1,2,16,2.67,6,1,1,1,0,7,4,2,3,0.023546
+BEGINNERS,13,2,2,16,1.23,4,0,0,1,0,8,4,2,3,0.013055
+PETRUS,7,1,0,23,3.29,8,2,2,1,0,13,8,2,3,0.019573
+APB,6,0,1,23,3.83,8,3,3,1,4,12,8,3,3,0.020678
