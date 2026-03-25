@@ -50,6 +50,7 @@ METHOD_FIELDNAMES = [
     "num_corner_constraints",
     "num_orientation_constraints",
     "constraint_type_diversity",
+    "score",  # ML label — populated by evaluate_solves, empty until then
 ]
 
 
@@ -148,7 +149,8 @@ def method_vector(method: Method) -> dict:
     """
     Return the full ML feature vector for a method as a flat dict.
 
-    Drop 'method_name' before feeding to a model — it is an identifier only.
+    Drop 'method_name' and 'score' before feeding to a model — they are
+    identifier and label respectively, not features.
 
     To extend: add new fields here, to METHOD_FIELDNAMES, and if adding new
     constraint types, to _CONSTRAINT_PREFIXES.
@@ -178,6 +180,7 @@ def method_vector(method: Method) -> dict:
         "num_corner_constraints":      type_counts["corner"],
         "num_orientation_constraints": type_counts["orientation"],
         "constraint_type_diversity":   type_counts["constraint_type_diversity"],
+        "score":                       "",  # populated later by evaluate_solves
     }
 
 
@@ -185,6 +188,7 @@ def serialize_method(workspace_root: str, method: Method):
     """
     Write method_vector(method) to data/methods/methods.csv in workspace_root.
     Replaces the existing row for this method if present, appends if not.
+    The 'score' column is preserved if already set; otherwise left empty.
     Called automatically by generate_solves.
     """
     _ensure_dirs(workspace_root)
@@ -199,6 +203,7 @@ def serialize_method(workspace_root: str, method: Method):
     replaced = False
     for i, r in enumerate(existing_rows):
         if r["method_name"] == method.name:
+            row["score"] = r.get("score", "")  # preserve existing score
             existing_rows[i] = row
             replaced = True
             break
@@ -209,6 +214,31 @@ def serialize_method(workspace_root: str, method: Method):
         writer = csv.DictWriter(f, fieldnames=METHOD_FIELDNAMES)
         writer.writeheader()
         writer.writerows(existing_rows)
+
+
+# ---------------------------------------------------------------------------
+# Scoring
+# ---------------------------------------------------------------------------
+
+def score_method(eval_row: dict) -> float:
+    """
+    Default scoring function for a method. Higher is better.
+
+    Takes an evaluation row dict (as produced by evaluate_solves) and returns
+    a float score. Currently scores purely on solve efficiency: 1 / avg_total_moves.
+
+    To use a custom scorer, pass a function with the same signature to
+    evaluate_solves() via the `scorer` parameter. For example:
+
+        def my_scorer(eval_row):
+            moves = float(eval_row.get("avg_total_moves", 0))
+            steps = int(eval_row.get("num_steps", 1))
+            return round(1 / (moves * steps ** 0.5), 6) if moves > 0 else 0.0
+
+        evaluate_solves(methods, workspace, scorer=my_scorer)
+    """
+    avg_moves = float(eval_row.get("avg_total_moves", 0))
+    return round(1 / avg_moves, 6) if avg_moves > 0 else 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -282,13 +312,17 @@ def generate_algorithms(method_list: list, num_solves: int, workspace_root: str)
             runner.run(method, scramble)
 
 
-def evaluate_solves(method_list: list, workspace_root: str):
+def evaluate_solves(method_list: list, workspace_root: str, scorer=score_method):
     """
     Read data/solves/<method_name>.csv for each method and produce a combined
     evaluation CSV at data/evaluation/evaluation_<timestamp>.csv.
 
+    Also updates each method's row in methods.csv with the computed score,
+    using `scorer` to compute it. `scorer` must be a callable that accepts an
+    eval row dict and returns a float. Defaults to score_method.
+
     Output columns: method, total_solves, avg_total_moves, num_steps,
-                    avg_moves_per_step, num_algs
+                    avg_moves_per_step, num_algs, score
     """
     _ensure_dirs(workspace_root)
     rows = []
@@ -321,14 +355,33 @@ def evaluate_solves(method_list: list, workspace_root: str):
         avg_total_moves    = round(total_moves_sum / num_rows, 2) if num_rows else 0
         avg_moves_per_step = round(avg_total_moves / num_steps, 2) if num_steps else 0
 
-        rows.append({
+        eval_row = {
             "method":             method.name,
             "total_solves":       num_rows,
             "avg_total_moves":    avg_total_moves,
             "num_steps":          num_steps,
             "avg_moves_per_step": avg_moves_per_step,
             "num_algs":           _num_algs(workspace_root, method),
-        })
+        }
+
+        score = scorer(eval_row)
+        eval_row["score"] = score
+
+        # Write score back into methods.csv
+        methods_csv = _methods_csv_path(workspace_root)
+        if os.path.exists(methods_csv) and os.path.getsize(methods_csv) > 0:
+            with open(methods_csv, newline="") as f:
+                method_rows = list(csv.DictReader(f))
+            for r in method_rows:
+                if r["method_name"] == method.name:
+                    r["score"] = score
+                    break
+            with open(methods_csv, "w", newline="") as f:
+                writer = csv.DictWriter(f, fieldnames=METHOD_FIELDNAMES)
+                writer.writeheader()
+                writer.writerows(method_rows)
+
+        rows.append(eval_row)
 
     if not rows:
         print("[WARN] No data to evaluate.")
@@ -336,7 +389,7 @@ def evaluate_solves(method_list: list, workspace_root: str):
 
     out_path = _eval_path(workspace_root)
     fieldnames = ["method", "total_solves", "avg_total_moves", "num_steps",
-                  "avg_moves_per_step", "num_algs"]
+                  "avg_moves_per_step", "num_algs", "score"]
 
     with open(out_path, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
