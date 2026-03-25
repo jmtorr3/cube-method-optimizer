@@ -16,7 +16,7 @@ num_alg_solves = 20
 enabled = true
 
 # If null → auto-detect based on memory
-max_workers = null
+# max_workers = null
 
 # Fraction of total system memory allowed (0.0–1.0)
 memory_fraction = 0.3

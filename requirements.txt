@@ -1,2 +1,4 @@
+-e git+ssh://git@github.com/cafox2003/cube-method-optimizer.git@82de5f51aa266d2b5f36c7a76c733c5b876ae435#egg=cube_solver
 numpy==2.4.2
+psutil==7.2.2
 PyRubik==0.1.0.2
