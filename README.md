@@ -130,6 +130,6 @@ pytest tests/
 
 
 ---
-Acknowledgements
+## Acknowledgements
 
 This project builds on top of [kubesolver](https://github.com/kuba97531/kubesolver), a high-performance Rubik’s Cube solver by kuba97531.
