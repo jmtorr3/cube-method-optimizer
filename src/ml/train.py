@@ -19,7 +19,7 @@ from core.config import CONFIG
 # step size for gradient descent
 LEARNING_RATE  = 0.5
 # number of iterations for gradient descent
-NUM_ITERATIONS = 1000
+NUM_ITERATIONS = 5000
 
 # paths to methods csv and model file
 def _methods_csv_path(workspace_root: str) -> str:
