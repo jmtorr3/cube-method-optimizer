@@ -14,7 +14,7 @@ FEATURE_COLS = [
     "num_steps",
     "num_groups",
     "num_removes",
-    "total_constraints",
+   # "total_constraints", getting rid of for now as its just a sum of num edge corner and orientation constraints
     "avg_constraints_per_step",
     "max_constraints_per_step",
     "num_cache_alg_steps",
