@@ -242,8 +242,19 @@ def score_method(eval_row: dict) -> float:
 
         evaluate_solves(methods, workspace, scorer=my_scorer)
     """
+    # avg_moves = float(eval_row.get("avg_total_moves", 0))
+    # return round(1 / avg_moves, 6) if avg_moves > 0 else 0.0
     avg_moves = float(eval_row.get("avg_total_moves", 0))
-    return round(1 / avg_moves, 6) if avg_moves > 0 else 0.0
+    total     = int(eval_row.get("total_solves", 0))
+    expected  = NUM_SCRAMBLES
+
+    if avg_moves <= 0 or total == 0:
+        return 0.0
+
+    completion = min(total / expected, 1.0)
+
+    # Completion penalty is quadratic — 80% completion = 0.64x score
+    return round((1 / avg_moves) * (completion ** 2), 6)
 
 
 # ---------------------------------------------------------------------------
@@ -268,11 +279,22 @@ def _write_solves(method: Method, results: list[SolveResult], workspace_root: st
     step_cols   = _step_names(results[0])
     fieldnames  = ["scramble", "orientation"] + step_cols + ["total_moves"]
 
+      # Drop failed results entirely — don't let them pollute the dataset
+    valid_results = [r for r in results if not r.failed]
+    if not valid_results:
+        print(f"[WARN] All solves failed for '{method.name}', skipping write.")
+        return
+
+    # Optionally warn on partial failure
+    if len(valid_results) < len(results):
+        n = len(results) - len(valid_results)
+        print(f"[WARN] {n}/{len(results)} solves failed for '{method.name}'.", flush=True)
+
     with open(path, "a", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         if not file_exists or os.path.getsize(path) == 0:
             writer.writeheader()
-        for result in results:
+        for result in valid_results:
             row   = {"scramble": result.scramble, "orientation": result.orientation, "total_moves": 0}
             total = 0
             for step in result.steps:
@@ -315,15 +337,15 @@ def _generate_solves_sequential(scrambles_list: list, method_list: list, workspa
         results = [runner.run(method, scramble) for scramble in scrambles_list]
         _write_solves(method, results, workspace_root)
 
-
 def _generate_solves_parallel(scrambles_list: list, method_list: list, workspace_root: str):
     """
     Parallel implementation of generate_solves.
 
-    Builds a flat (method, scramble) task list across all methods, submits
-    them via run_parallel_solves, then groups results by method for writing.
-    CSV writes happen in the main process after all futures complete.
+    Streams results as they complete and writes each method's solves
+    immediately once all its scrambles are done.
     """
+
+    from collections import defaultdict
 
     tasks = [
         (method, scramble)
@@ -331,26 +353,54 @@ def _generate_solves_parallel(scrambles_list: list, method_list: list, workspace
         for scramble in scrambles_list
     ]
 
-    print(f"[parallel] Submitting {len(tasks)} tasks "
+    total_tasks = len(tasks)
+
+    print(f"[parallel] Submitting {total_tasks} tasks "
           f"({len(method_list)} methods × {len(scrambles_list)} scrambles)")
 
-    paired_results = run_parallel_solves(tasks, workspace_root)
+    # Track progress + per-method accumulation
+    method_map    = {m.name: m for m in method_list}
+    method_data   = defaultdict(list)
+    method_counts = defaultdict(int)
 
-    # Group results by method name, preserving method object for _write_solves
-    method_map  = {m.name: m for m in method_list}
-    grouped     = defaultdict(list)
-    for method, result in paired_results:
-        grouped[method.name].append(result)
+    completed = 0
 
-    for method_name, results in grouped.items():
-        _write_solves(method_map[method_name], results, workspace_root)
+# Smoke test — run one task sequentially before handing off to workers
+    test_method, test_scramble = tasks[0]
+    runner = MethodRunner(solver_path=_solver_path(), workspace_root=workspace_root, timeout=TIMEOUT)
+    test_result = runner.run(test_method, test_scramble)
+    print(f"[SMOKE TEST] {test_method.name}: {test_result}", flush=True)
 
-    total    = len(paired_results)
-    expected = len(tasks)
-    if total < expected:
-        print(f"[WARN] {expected - total} tasks failed or were skipped.")
-    print(f"[parallel] {total}/{expected} solves completed.")
+    for method, result in run_parallel_solves(tasks, workspace_root):
+        completed += 1
+        method_name = method.name
 
+        method_counts[method_name] += 1
+        method_data[method_name].append(result)
+
+        # Progress output (adjust frequency as needed)
+        if completed % 50 == 0 or completed == total_tasks:
+            print(f"[progress] {completed}/{total_tasks} solves completed", flush=True)
+
+        # If this method is fully done → write immediately
+        if method_counts[method_name] == len(scrambles_list):
+            print(f"[WRITE] {method_name} ({method_counts[method_name]} solves)", flush=True)
+
+            _write_solves(
+                method_map[method_name],
+                method_data[method_name],
+                workspace_root
+            )
+
+            # Free memory immediately
+            del method_data[method_name]
+            del method_counts[method_name]
+
+    # Final accounting
+    if completed < total_tasks:
+        print(f"[WARN] {total_tasks - completed} tasks failed or were skipped.")
+
+    print(f"[parallel] {completed}/{total_tasks} solves completed.")
 
 def generate_algorithms(method_list: list, num_solves: int, workspace_root: str):
     """
@@ -471,14 +521,6 @@ def main():
     dsl_dir    = os.path.join(workspace, "dsl")
 
     print("[1/4] Loading methods...")
-    # zz        = method_from_file(os.path.join(dsl_dir, "zz_method.dsl"))
-    # cfop      = method_from_file(os.path.join(dsl_dir, "cfop_method.dsl"))
-    # roux      = method_from_file(os.path.join(dsl_dir, "roux_method.dsl"))
-    # beginners = method_from_file(os.path.join(dsl_dir, "beginners_method.dsl"))
-    # petrus    = method_from_file(os.path.join(dsl_dir, "petrus_method.dsl"))
-    # apb       = method_from_file(os.path.join(dsl_dir, "apb.dsl"))
-    # methods   = [zz, cfop, roux, beginners, petrus, apb]
-    # print("[1/4] Loading methods from DSL directory...")
     methods = []
     for filename in os.listdir(dsl_dir):
         if not filename.endswith(".dsl"):
@@ -492,16 +534,20 @@ def main():
         except Exception as e:
             print(f"[WARN] Failed to load {filename}: {e}")
 
-    methods = [m for m in methods if not _has_solves(workspace, m)]
+    methods_no_solves = [m for m in methods if not _has_solves(workspace, m)]
+    methods_solves = [m for m in methods if _has_solves(workspace, m)]
+
+    methods = methods_no_solves
     print(f"[INFO] Loaded {len(methods)} methods.")
 
-    print(f"[2/4] Generating algorithms ({NUM_ALG_SOLVES} solves)...")
-    generate_algorithms(methods, num_solves=NUM_ALG_SOLVES, workspace_root=workspace)
+    # print(f"[2/4] Generating algorithms ({NUM_ALG_SOLVES} solves)...")
+    # generate_algorithms(methods, num_solves=NUM_ALG_SOLVES, workspace_root=workspace)
 
     print(f"[3/4] Generating solves ({NUM_SCRAMBLES} scrambles)...")
     scrambles = generate_scrambles(NUM_SCRAMBLES)
     generate_solves(scrambles, methods, workspace_root=workspace)
 
+    # methods = methods_solves
     print("[4/4] Evaluating solves...")
     evaluate_solves(methods, workspace_root=workspace)
 
