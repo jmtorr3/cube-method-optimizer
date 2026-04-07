@@ -17,7 +17,7 @@ from core.config import CONFIG
 # Hyperparameters
  
 # step size for gradient descent
-LEARNING_RATE  = 0.5
+LEARNING_RATE  = 0.005
 # number of iterations for gradient descent
 NUM_ITERATIONS = 5000
 

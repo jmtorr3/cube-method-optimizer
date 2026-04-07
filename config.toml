@@ -1,5 +1,5 @@
 [general]
-default_workspace = "workspace/stable"
+default_workspace = "workspace/stable/scratch"
 
 [solver]
 timeout = 1000
