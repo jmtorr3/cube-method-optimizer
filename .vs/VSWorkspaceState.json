@@ -2,15 +2,15 @@
   "ExpandedNodes": [
     "",
     "\\src",
-    "\\src\\discovery",
     "\\src\\generation",
     "\\src\\ml",
     "\\src\\solver",
     "\\workspace",
     "\\workspace\\stable",
-    "\\workspace\\stable\\data",
-    "\\workspace\\stable\\data\\methods"
+    "\\workspace\\stable\\scratch",
+    "\\workspace\\stable\\scratch\\data",
+    "\\workspace\\stable\\scratch\\data\\methods"
   ],
-  "SelectedNode": "\\src\\ml\\train.py",
+  "SelectedNode": "\\workspace\\stable\\scratch\\data\\methods\\methods.csv",
   "PreviewInSolutionExplorer": false
 }

@@ -45,9 +45,3 @@ D' R D' R2 D2 R' D2 R
 D2 F' D' R2 D2 B' D' F B
 D R U' D2 R D2 R' U R'
 D2 R2 B' R2 B R B' R B
-F2 U' B' U' B U B U F2
-B' D' F' R2 F D B' D B2
-D R2 D2 R' D' R D' R2
-D L' F2 U' F2 L2 D' B2 L'
-D' B2 D2 B D B' D B2
-R U' D2 R D R' U D R'
