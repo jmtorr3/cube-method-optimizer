@@ -10,6 +10,7 @@ Entry point:
 import os
 import sys
 import csv
+import math
 import platform
 from collections import defaultdict
 from datetime import datetime
@@ -32,13 +33,6 @@ NUM_SCRAMBLES  = CONFIG["generation"]["num_scrambles"]
 NUM_ALG_SOLVES = CONFIG["generation"]["num_alg_solves"]
 PARALLEL       = CONFIG["parallel"]["enabled"]
 
-# Constraint type prefixes — extend as new constraint types are added to the DSL
-_CONSTRAINT_PREFIXES = {
-    "edge":        ("add_edge ",),
-    "corner":      ("add_corner ",),
-    "orientation": ("add_edges_orientation", "add_corners_orientation"),
-}
-
 METHOD_FIELDNAMES = [
     "method_name",
     "num_steps",
@@ -46,15 +40,32 @@ METHOD_FIELDNAMES = [
     "num_removes",
     "total_constraints",
     "avg_constraints_per_step",
+    "min_constraints_per_step",
     "max_constraints_per_step",
+    "constraints_per_step_range",
+    "constraints_per_step_std",
+    "step_entropy",
     "num_cache_alg_steps",
     "num_free_layer_steps",
     "symmetry_depth",
     "num_symmetry_orientations",
-    "num_edge_constraints",
-    "num_corner_constraints",
-    "num_orientation_constraints",
-    "constraint_type_diversity",
+    "total_step_face_overlap_score",
+    "avg_step_face_overlap_score",
+    "min_step_face_overlap_score",
+    "max_step_face_overlap_score",
+    "step_face_overlap_score_range",
+    "step_face_overlap_score_std",
+    "num_zero_face_overlap_steps",
+    "fraction_zero_face_overlap_steps",
+    "avg_distinct_faces_per_step",
+    "min_distinct_faces_per_step",
+    "max_distinct_faces_per_step",
+    "num_edge_only_steps",
+    "num_corner_only_steps",
+    "num_mixed_piece_type_steps",
+    "fraction_mixed_piece_type_steps",
+    "avg_adjacent_step_face_overlap",
+    "max_adjacent_step_face_overlap",
     "score",  # ML label — populated by evaluate_solves, empty until then
 ]
 
@@ -112,6 +123,35 @@ def _num_algs(workspace_root: str, method: Method) -> int:
                 total += len(load_cache(workspace_root, method.name, step.name))
     return total
 
+def _mean(values: list[float]) -> float:
+    return sum(values) / len(values) if values else 0.0
+
+def _std(values: list[float]) -> float:
+    if not values:
+        return 0.0
+    mu = _mean(values)
+    return math.sqrt(sum((v - mu) ** 2 for v in values) / len(values))
+
+def _step_count_entropy(counts: list[int]) -> float:
+    """
+    Entropy of the distribution of constraints across steps.
+
+    Higher entropy means the method's constraints are distributed more evenly
+    across steps. Lower entropy means they are concentrated in fewer steps.
+    """
+    total = sum(counts)
+    if total <= 0:
+        return 0.0
+
+    entropy = 0.0
+    for count in counts:
+        if count <= 0:
+            continue
+        p = count / total
+        entropy -= p * math.log2(p)
+
+    return entropy
+
 
 # ---------------------------------------------------------------------------
 # Method feature extraction
@@ -135,19 +175,101 @@ def _extract_all_steps(method: Method) -> tuple:
     return steps, groups, removes
 
 
-def _count_constraint_types(steps: list) -> dict:
+def _piece_from_constraint(line: str) -> str | None:
     """
-    Count constraint lines by semantic type across all steps.
-    Returns per-type counts plus constraint_type_diversity.
+    Extract piece token from a constraint line.
+
+    Supported:
+        add_edge UF
+        add_corner UFR
+
+    Returns None for non-piece constraints such as orientation constraints.
     """
-    counts = {k: 0 for k in _CONSTRAINT_PREFIXES}
-    for step in steps:
-        for line in step.constraints:
-            for category, prefixes in _CONSTRAINT_PREFIXES.items():
-                if any(line.startswith(p) for p in prefixes):
-                    counts[category] += 1
-    diversity = sum(1 for v in counts.values() if v > 0)
-    return {**counts, "constraint_type_diversity": diversity}
+    if line.startswith("add_edge ") or line.startswith("add_corner "):
+        parts = line.split()
+        if len(parts) >= 2:
+            return parts[1].strip()
+    return None
+
+
+def _step_pieces(step) -> list[str]:
+    """Return the list of piece strings in this step."""
+    pieces = []
+    for line in step.constraints:
+        piece = _piece_from_constraint(line)
+        if piece is not None:
+            pieces.append(piece)
+    return pieces
+
+
+def _step_face_counts(step) -> dict[str, int]:
+    """
+    Count sticker-letter frequency across all pieces in a step.
+
+    Example:
+        UF, URB, UL  -> U:3, F:1, R:1, B:1, L:1
+    """
+    counts = defaultdict(int)
+    for piece in _step_pieces(step):
+        for face in piece:
+            counts[face] += 1
+    return dict(counts)
+
+
+def _step_face_overlap_score(step) -> int:
+    """
+    Reward repeated face letters within a step.
+
+    For each face:
+        1 occurrence -> 0
+        2 occurrences -> 1
+        3 occurrences -> 2
+        etc.
+
+    Step score = sum(max(count - 1, 0) for each face).
+    """
+    counts = _step_face_counts(step)
+    return sum(max(count - 1, 0) for count in counts.values())
+
+
+def _step_distinct_face_count(step) -> int:
+    """Number of distinct face letters touched by the step."""
+    return len(_step_face_counts(step))
+
+
+def _step_piece_type_profile(step) -> tuple[int, int]:
+    """
+    Return (#edge_piece_constraints, #corner_piece_constraints) for this step.
+    Ignores non-piece constraints.
+    """
+    num_edges = 0
+    num_corners = 0
+
+    for piece in _step_pieces(step):
+        if len(piece) == 2:
+            num_edges += 1
+        elif len(piece) == 3:
+            num_corners += 1
+
+    return num_edges, num_corners
+
+
+def _step_face_set(step) -> set[str]:
+    """Set of distinct faces used by the step."""
+    return set(_step_face_counts(step).keys())
+
+
+def _adjacent_step_face_overlaps(steps: list) -> list[int]:
+    """
+    For each adjacent pair of steps, measure face overlap as the size of the
+    intersection of their face sets.
+    """
+    overlaps = []
+    for i in range(len(steps) - 1):
+        left_faces = _step_face_set(steps[i])
+        right_faces = _step_face_set(steps[i + 1])
+        overlaps.append(len(left_faces & right_faces))
+    return overlaps
 
 
 def method_vector(method: Method) -> dict:
@@ -156,36 +278,86 @@ def method_vector(method: Method) -> dict:
 
     Drop 'method_name' and 'score' before feeding to a model — they are
     identifier and label respectively, not features.
-
-    To extend: add new fields here, to METHOD_FIELDNAMES, and if adding new
-    constraint types, to _CONSTRAINT_PREFIXES.
     """
     steps, groups, removes = _extract_all_steps(method)
 
     constraint_counts = [len(s.constraints) for s in steps]
     total_constraints = sum(constraint_counts)
-    avg_constraints   = round(total_constraints / len(steps), 2) if steps else 0
+    avg_constraints   = round(_mean(constraint_counts), 2) if steps else 0
+    min_constraints   = min(constraint_counts) if constraint_counts else 0
     max_constraints   = max(constraint_counts) if constraint_counts else 0
+    constraints_range = max_constraints - min_constraints if constraint_counts else 0
+    constraints_std   = round(_std(constraint_counts), 2) if steps else 0
+    step_entropy      = round(_step_count_entropy(constraint_counts), 4) if steps else 0
 
-    type_counts = _count_constraint_types(steps)
+    face_overlap_scores = [_step_face_overlap_score(s) for s in steps]
+    total_face_overlap  = sum(face_overlap_scores)
+    avg_face_overlap    = round(_mean(face_overlap_scores), 2) if steps else 0
+    min_face_overlap    = min(face_overlap_scores) if face_overlap_scores else 0
+    max_face_overlap    = max(face_overlap_scores) if face_overlap_scores else 0
+    face_overlap_range  = max_face_overlap - min_face_overlap if face_overlap_scores else 0
+    face_overlap_std    = round(_std(face_overlap_scores), 2) if steps else 0
+    zero_face_overlap_steps = sum(1 for score in face_overlap_scores if score == 0)
+    frac_zero_face_overlap  = round(zero_face_overlap_steps / len(steps), 4) if steps else 0
+
+    distinct_faces_per_step = [_step_distinct_face_count(s) for s in steps]
+    avg_distinct_faces      = round(_mean(distinct_faces_per_step), 2) if steps else 0
+    min_distinct_faces      = min(distinct_faces_per_step) if distinct_faces_per_step else 0
+    max_distinct_faces      = max(distinct_faces_per_step) if distinct_faces_per_step else 0
+
+    edge_only_steps = 0
+    corner_only_steps = 0
+    mixed_piece_type_steps = 0
+
+    for step in steps:
+        num_edges, num_corners = _step_piece_type_profile(step)
+        if num_edges > 0 and num_corners == 0:
+            edge_only_steps += 1
+        elif num_corners > 0 and num_edges == 0:
+            corner_only_steps += 1
+        elif num_edges > 0 and num_corners > 0:
+            mixed_piece_type_steps += 1
+
+    frac_mixed_piece_type_steps = round(mixed_piece_type_steps / len(steps), 4) if steps else 0
+
+    adjacent_face_overlaps = _adjacent_step_face_overlaps(steps)
+    avg_adjacent_overlap   = round(_mean(adjacent_face_overlaps), 2) if adjacent_face_overlaps else 0
+    max_adjacent_overlap   = max(adjacent_face_overlaps) if adjacent_face_overlaps else 0
 
     return {
-        "method_name":                 method.name,
-        "num_steps":                   len(steps),
-        "num_groups":                  len(groups),
-        "num_removes":                 len(removes),
-        "total_constraints":           total_constraints,
-        "avg_constraints_per_step":    avg_constraints,
-        "max_constraints_per_step":    max_constraints,
-        "num_cache_alg_steps":         sum(1 for s in steps if s.cache_alg),
-        "num_free_layer_steps":        sum(1 for s in steps if s.free_layers),
-        "symmetry_depth":              method.symmetry_depth,
-        "num_symmetry_orientations":   len(method.symmetry_orientations),
-        "num_edge_constraints":        type_counts["edge"],
-        "num_corner_constraints":      type_counts["corner"],
-        "num_orientation_constraints": type_counts["orientation"],
-        "constraint_type_diversity":   type_counts["constraint_type_diversity"],
-        "score":                       "",  # populated later by evaluate_solves
+        "method_name":                      method.name,
+        "num_steps":                        len(steps),
+        "num_groups":                       len(groups),
+        "num_removes":                      len(removes),
+        "total_constraints":                total_constraints,
+        "avg_constraints_per_step":         avg_constraints,
+        "min_constraints_per_step":         min_constraints,
+        "max_constraints_per_step":         max_constraints,
+        "constraints_per_step_range":       constraints_range,
+        "constraints_per_step_std":         constraints_std,
+        "step_entropy":                     step_entropy,
+        "num_cache_alg_steps":              sum(1 for s in steps if s.cache_alg),
+        "num_free_layer_steps":             sum(1 for s in steps if s.free_layers),
+        "symmetry_depth":                   method.symmetry_depth,
+        "num_symmetry_orientations":        len(method.symmetry_orientations),
+        "total_step_face_overlap_score":    total_face_overlap,
+        "avg_step_face_overlap_score":      avg_face_overlap,
+        "min_step_face_overlap_score":      min_face_overlap,
+        "max_step_face_overlap_score":      max_face_overlap,
+        "step_face_overlap_score_range":    face_overlap_range,
+        "step_face_overlap_score_std":      face_overlap_std,
+        "num_zero_face_overlap_steps":      zero_face_overlap_steps,
+        "fraction_zero_face_overlap_steps": frac_zero_face_overlap,
+        "avg_distinct_faces_per_step":      avg_distinct_faces,
+        "min_distinct_faces_per_step":      min_distinct_faces,
+        "max_distinct_faces_per_step":      max_distinct_faces,
+        "num_edge_only_steps":              edge_only_steps,
+        "num_corner_only_steps":            corner_only_steps,
+        "num_mixed_piece_type_steps":       mixed_piece_type_steps,
+        "fraction_mixed_piece_type_steps":  frac_mixed_piece_type_steps,
+        "avg_adjacent_step_face_overlap":   avg_adjacent_overlap,
+        "max_adjacent_step_face_overlap":   max_adjacent_overlap,
+        "score":                            "",  # populated later by evaluate_solves
     }
 
 
@@ -225,25 +397,71 @@ def serialize_method(workspace_root: str, method: Method):
 # Scoring
 # ---------------------------------------------------------------------------
 
+# def score_method(eval_row: dict) -> float:
+#     """
+#     Default scoring function for a method. Higher is better.
+#
+#     Takes an evaluation row dict (as produced by evaluate_solves) and returns
+#     a float score. Currently scores purely on solve efficiency: 1 / avg_total_moves.
+#
+#     To use a custom scorer, pass a function with the same signature to
+#     evaluate_solves() via the `scorer` parameter. For example:
+#
+#         def my_scorer(eval_row):
+#             moves = float(eval_row.get("avg_total_moves", 0))
+#             steps = int(eval_row.get("num_steps", 1))
+#             return round(1 / (moves * steps ** 0.5), 6) if moves > 0 else 0.0
+#
+#         evaluate_solves(methods, workspace, scorer=my_scorer)
+#     """
+#     avg_moves = float(eval_row.get("avg_total_moves", 0))
+#     total     = int(eval_row.get("total_solves", 0))
+#     expected  = NUM_SCRAMBLES
+#
+#     if avg_moves <= 0 or total == 0:
+#         return 0.0
+#
+#     completion = min(total / expected, 1.0)
+#
+#     # Completion penalty is quadratic — 80% completion = 0.64x score
+#     return round((1 / avg_moves) * (completion ** 2), 6)
 def score_method(eval_row: dict) -> float:
     """
     Default scoring function for a method. Higher is better.
 
-    Takes an evaluation row dict (as produced by evaluate_solves) and returns
-    a float score. Currently scores purely on solve efficiency: 1 / avg_total_moves.
+    Scores primarily on total move efficiency, but also penalizes methods whose
+    average moves per step are too large, since those tend to be less human-
+    practical even if the total move count looks good.
 
-    To use a custom scorer, pass a function with the same signature to
-    evaluate_solves() via the `scorer` parameter. For example:
+    Penalty design:
+      - No penalty up to 7 avg moves/step
+      - Above 7, penalty grows quadratically
 
-        def my_scorer(eval_row):
-            moves = float(eval_row.get("avg_total_moves", 0))
-            steps = int(eval_row.get("num_steps", 1))
-            return round(1 / (moves * steps ** 0.5), 6) if moves > 0 else 0.0
-
-        evaluate_solves(methods, workspace, scorer=my_scorer)
+    Completion penalty is still quadratic.
     """
-    avg_moves = float(eval_row.get("avg_total_moves", 0))
-    return round(1 / avg_moves, 6) if avg_moves > 0 else 0.0
+    avg_total_moves = float(eval_row.get("avg_total_moves", 0))
+    avg_moves_per_step = float(eval_row.get("avg_moves_per_step", 0))
+    total = int(eval_row.get("total_solves", 0))
+    expected = NUM_SCRAMBLES
+
+    if avg_total_moves <= 0 or total == 0:
+        return 0.0
+
+    completion = min(total / expected, 1.0)
+    base_score = 1 / avg_total_moves
+
+    # Human-practicality penalty:
+    # no penalty up to 7 avg moves/step, then quadratic growth
+    threshold = 7.0
+    penalty_strength = 0.15
+
+    if avg_moves_per_step <= threshold:
+        step_penalty = 1.0
+    else:
+        excess = avg_moves_per_step - threshold
+        step_penalty = 1 / (1 + penalty_strength * (excess ** 2))
+
+    return round(base_score * (completion ** 2) * step_penalty, 6)
 
 
 # ---------------------------------------------------------------------------
@@ -268,11 +486,22 @@ def _write_solves(method: Method, results: list[SolveResult], workspace_root: st
     step_cols   = _step_names(results[0])
     fieldnames  = ["scramble", "orientation"] + step_cols + ["total_moves"]
 
+    # Drop failed results entirely — don't let them pollute the dataset
+    valid_results = [r for r in results if not r.failed]
+    if not valid_results:
+        print(f"[WARN] All solves failed for '{method.name}', skipping write.")
+        return
+
+    # Optionally warn on partial failure
+    if len(valid_results) < len(results):
+        n = len(results) - len(valid_results)
+        print(f"[WARN] {n}/{len(results)} solves failed for '{method.name}'.", flush=True)
+
     with open(path, "a", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         if not file_exists or os.path.getsize(path) == 0:
             writer.writeheader()
-        for result in results:
+        for result in valid_results:
             row   = {"scramble": result.scramble, "orientation": result.orientation, "total_moves": 0}
             total = 0
             for step in result.steps:
@@ -315,42 +544,67 @@ def _generate_solves_sequential(scrambles_list: list, method_list: list, workspa
         results = [runner.run(method, scramble) for scramble in scrambles_list]
         _write_solves(method, results, workspace_root)
 
-
 def _generate_solves_parallel(scrambles_list: list, method_list: list, workspace_root: str):
     """
     Parallel implementation of generate_solves.
 
-    Builds a flat (method, scramble) task list across all methods, submits
-    them via run_parallel_solves, then groups results by method for writing.
-    CSV writes happen in the main process after all futures complete.
+    Streams results as they complete and writes each method's solves
+    immediately once all its scrambles are done.
     """
-
     tasks = [
         (method, scramble)
         for method in method_list
         for scramble in scrambles_list
     ]
 
-    print(f"[parallel] Submitting {len(tasks)} tasks "
+    total_tasks = len(tasks)
+
+    print(f"[parallel] Submitting {total_tasks} tasks "
           f"({len(method_list)} methods × {len(scrambles_list)} scrambles)")
 
-    paired_results = run_parallel_solves(tasks, workspace_root)
+    # Track progress + per-method accumulation
+    method_map    = {m.name: m for m in method_list}
+    method_data   = defaultdict(list)
+    method_counts = defaultdict(int)
 
-    # Group results by method name, preserving method object for _write_solves
-    method_map  = {m.name: m for m in method_list}
-    grouped     = defaultdict(list)
-    for method, result in paired_results:
-        grouped[method.name].append(result)
+    completed = 0
 
-    for method_name, results in grouped.items():
-        _write_solves(method_map[method_name], results, workspace_root)
+    # Smoke test — run one task sequentially before handing off to workers
+    test_method, test_scramble = tasks[0]
+    runner = MethodRunner(solver_path=_solver_path(), workspace_root=workspace_root, timeout=TIMEOUT)
+    test_result = runner.run(test_method, test_scramble)
+    print(f"[SMOKE TEST] {test_method.name}: {test_result}", flush=True)
 
-    total    = len(paired_results)
-    expected = len(tasks)
-    if total < expected:
-        print(f"[WARN] {expected - total} tasks failed or were skipped.")
-    print(f"[parallel] {total}/{expected} solves completed.")
+    for method, result in run_parallel_solves(tasks, workspace_root):
+        completed += 1
+        method_name = method.name
 
+        method_counts[method_name] += 1
+        method_data[method_name].append(result)
+
+        # Progress output (adjust frequency as needed)
+        if completed % 50 == 0 or completed == total_tasks:
+            print(f"[progress] {completed}/{total_tasks} solves completed", flush=True)
+
+        # If this method is fully done → write immediately
+        if method_counts[method_name] == len(scrambles_list):
+            print(f"[WRITE] {method_name} ({method_counts[method_name]} solves)", flush=True)
+
+            _write_solves(
+                method_map[method_name],
+                method_data[method_name],
+                workspace_root
+            )
+
+            # Free memory immediately
+            del method_data[method_name]
+            del method_counts[method_name]
+
+    # Final accounting
+    if completed < total_tasks:
+        print(f"[WARN] {total_tasks - completed} tasks failed or were skipped.")
+
+    print(f"[parallel] {completed}/{total_tasks} solves completed.")
 
 def generate_algorithms(method_list: list, num_solves: int, workspace_root: str):
     """
@@ -423,7 +677,7 @@ def evaluate_solves(method_list: list, workspace_root: str, scorer=score_method)
             "num_algs":           _num_algs(workspace_root, method),
         }
 
-        score            = scorer(eval_row)
+        score             = scorer(eval_row)
         eval_row["score"] = score
 
         # Write score back into methods.csv
@@ -461,41 +715,39 @@ def evaluate_solves(method_list: list, workspace_root: str, scorer=score_method)
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
+def _has_solves(workspace_root: str, method: Method) -> bool:
+    path = _solves_path(workspace_root, method.name)
+    return os.path.exists(path) and os.path.getsize(path) > 0
 
 def main():
-    default_ws = CONFIG["general"]["default_workspace"]
+    default_ws = CONFIG["general"]["scratch_workspace"]
     workspace  = sys.argv[1] if len(sys.argv) > 1 else default_ws
     dsl_dir    = os.path.join(workspace, "dsl")
 
+    print("[1/4] Loading methods...")
+    methods = []
+    for filename in os.listdir(dsl_dir):
+        if not filename.endswith(".dsl"):
+            continue
 
-    while True:
-        print("[1/4] Loading method...")
-        zz = method_from_file(os.path.join(dsl_dir, "zz_method.dsl"))
-        cfop = method_from_file(os.path.join(dsl_dir, "cfop_method.dsl"))
-        roux = method_from_file(os.path.join(dsl_dir, "roux_method.dsl"))
-        beginners = method_from_file(os.path.join(dsl_dir, "beginners_method.dsl"))
-        petrus = method_from_file(os.path.join(dsl_dir, "petrus_method.dsl"))
-        apb = method_from_file(os.path.join(dsl_dir, "apb.dsl"))
-        methods = [zz, cfop, roux, beginners, petrus, apb]
+        path = os.path.join(dsl_dir, filename)
 
-        print("[1/4] Loading methods...")
-        zz        = method_from_file(os.path.join(dsl_dir, "zz_method.dsl"))
-        cfop      = method_from_file(os.path.join(dsl_dir, "cfop_method.dsl"))
-        roux      = method_from_file(os.path.join(dsl_dir, "roux_method.dsl"))
-        beginners = method_from_file(os.path.join(dsl_dir, "beginners_method.dsl"))
-        petrus    = method_from_file(os.path.join(dsl_dir, "petrus_method.dsl"))
-        apb       = method_from_file(os.path.join(dsl_dir, "apb.dsl"))
-        methods   = [zz, cfop, roux, beginners, petrus, apb]
+        try:
+            method = method_from_file(path)
+            methods.append(method)
+        except Exception as e:
+            print(f"[WARN] Failed to load {filename}: {e}")
 
-        print(f"[2/4] Generating algorithms ({NUM_ALG_SOLVES} solves)...")
-        generate_algorithms(methods, num_solves=NUM_ALG_SOLVES, workspace_root=workspace)
+    methods = [m for m in methods if not _has_solves(workspace, m)]
+    # methods = [m for m in methods if _has_solves(workspace, m)]
+    print(f"[INFO] Loaded {len(methods)} methods.")
 
-        print(f"[3/4] Generating solves ({NUM_SCRAMBLES} scrambles)...")
-        scrambles = generate_scrambles(NUM_SCRAMBLES)
-        generate_solves(scrambles, methods, workspace_root=workspace)
+    print(f"Generating solves ({NUM_SCRAMBLES} scrambles)...")
+    scrambles = generate_scrambles(NUM_SCRAMBLES)
+    generate_solves(scrambles, methods, workspace_root=workspace)
 
-        print("[4/4] Evaluating solves...")
-        evaluate_solves(methods, workspace_root=workspace)
+    print("[4/4] Evaluating solves...")
+    evaluate_solves(methods, workspace_root=workspace)
 
 
 if __name__ == "__main__":

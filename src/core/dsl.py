@@ -122,6 +122,66 @@ def _parse_method_header(line: str) -> Method:
         symmetry_depth=sym_depth,
     )
 
+# ---------------------------------------------------------------------------
+# Method serialization
+# ---------------------------------------------------------------------------
+
+def method_to_dsl_text(method: Method) -> str:
+    """
+    Convert a Method object into DSL text that can be parsed again.
+    Returns a string containing the DSL.
+    """
+    # Header line with rotation and symmetry
+    header_parts = [f"[METHOD: {method.name}"]
+    if method.rotation_str:
+        header_parts.append(f"rotation={method.rotation_str}")
+    if method.symmetry_orientations:
+        header_parts.append(f"symmetry={','.join(method.symmetry_orientations)}")
+    if method.symmetry_depth != 1:
+        header_parts.append(f"symmetry_depth={method.symmetry_depth}")
+    header_line = " | ".join(header_parts) + "]"
+
+    lines = [header_line]
+
+    for item in method.items:
+        if isinstance(item, Remove):
+            lines.append(f"[REMOVE: {item.command}]")
+        elif isinstance(item, Group):
+            lines.append(f"[GROUP: {item.name} | order={item.order}]")
+            for step in item.steps:
+                lines.extend(_step_to_lines(step))
+            lines.append("[END GROUP]")
+        elif isinstance(item, Step):
+            lines.extend(_step_to_lines(item))
+
+    lines.append("[END METHOD]")
+    return "\n".join(lines)
+
+
+def _step_to_lines(step: Step) -> list:
+    """Helper to convert a Step object into DSL lines"""
+    # Convert free_layers from list[list[str]] → layer letters for DSL
+    free_layer_str = ""
+    if step.free_layers:
+        layer_chars = []
+        for moves in step.free_layers:
+            # pick first non-empty move as representative
+            for move in moves:
+                if move:  # skip ""
+                    layer_chars.append(move[0].upper())
+                    break
+        free_layer_str = "".join(layer_chars)
+
+    line = f"[STEP: {step.name} | cache_alg={'true' if step.cache_alg else 'false'}"
+    if free_layer_str:
+        line += f" | free_layer={free_layer_str}"
+    line += "]"
+
+    # Step constraints go directly under step
+    lines = [line] + step.constraints
+    return lines
+
+
 
 # ---------------------------------------------------------------------------
 # Public API
@@ -201,3 +261,14 @@ def method_from_file(path: str) -> Method:
 def method_from_name(name: str, dsl_dir: str) -> Method:
     """Load a method by filename (without .dsl) from dsl_dir."""
     return method_from_file(os.path.join(dsl_dir, f"{name}.dsl"))
+
+def method_to_file(method: Method, workspace_root: str):
+    """
+    Save a Method object as a .dsl file under workspace_root/dsl/
+    Creates directory if it does not exist.
+    """
+    dsl_dir = os.path.join(workspace_root, "dsl")
+    os.makedirs(dsl_dir, exist_ok=True)
+    path = os.path.join(dsl_dir, f"{method.name}.dsl")
+    with open(path, "w") as f:
+        f.write(method_to_dsl_text(method))

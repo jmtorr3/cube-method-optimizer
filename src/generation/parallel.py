@@ -10,7 +10,7 @@ All CSV writes are handled by the caller (main process only).
 import time
 import platform
 import psutil
-from concurrent.futures import ProcessPoolExecutor, Future
+from concurrent.futures import ProcessPoolExecutor, Future, as_completed
 
 from core.config import CONFIG
 from core.models import Method, SolveResult
@@ -23,12 +23,12 @@ from solver.solver import MethodRunner, TIMEOUT
 
 _PARALLEL_CFG = CONFIG["parallel"]
 
-_MEMORY_FRACTION    = _PARALLEL_CFG["memory_fraction"]       # e.g. 0.3
+_MEMORY_FRACTION    = _PARALLEL_CFG["memory_fraction"]       # e.g. 0.35
 _MEMORY_PER_WORKER  = _PARALLEL_CFG["memory_per_worker_gb"]  # e.g. 6
 _SAFETY_BUFFER_GB   = _PARALLEL_CFG["safety_buffer_gb"]      # e.g. 8
 _MAX_WORKERS_CFG    = _PARALLEL_CFG.get("max_workers")        # null → auto
 
-_SPAWN_POLL_INTERVAL = 0.5  # seconds to wait when memory or worker cap is hit
+_SPAWN_POLL_INTERVAL = 0.5  # seconds to wait when worker cap is hit
 
 
 # ---------------------------------------------------------------------------
@@ -63,29 +63,12 @@ def _compute_max_workers() -> int:
     if _MAX_WORKERS_CFG is not None:
         return int(_MAX_WORKERS_CFG)
 
-    total_gb        = psutil.virtual_memory().total / (1024 ** 3)
-    usable_gb       = total_gb * _MEMORY_FRACTION
-    available_gb    = usable_gb - _SAFETY_BUFFER_GB
-    calculated      = int(available_gb / _MEMORY_PER_WORKER)
+    total_gb     = psutil.virtual_memory().total / (1024 ** 3)
+    usable_gb    = total_gb * _MEMORY_FRACTION
+    available_gb = usable_gb - _SAFETY_BUFFER_GB
+    calculated   = int(available_gb / _MEMORY_PER_WORKER)
 
     return max(1, calculated)
-
-
-# ---------------------------------------------------------------------------
-# Memory gate
-# ---------------------------------------------------------------------------
-
-def _memory_ok() -> bool:
-    """
-    Return True if current system memory usage is within the allowed fraction.
-    Checked before spawning each new worker.
-    """
-    mem             = psutil.virtual_memory()
-    used_gb         = (mem.total - mem.available) / (1024 ** 3)
-    total_gb        = mem.total / (1024 ** 3)
-    threshold_gb    = total_gb * _MEMORY_FRACTION
-
-    return (used_gb + _MEMORY_PER_WORKER) <= (threshold_gb - _SAFETY_BUFFER_GB)
 
 
 # ---------------------------------------------------------------------------
@@ -93,8 +76,8 @@ def _memory_ok() -> bool:
 # ---------------------------------------------------------------------------
 
 def _solver_path() -> str:
-    system = platform.system().lower()
     import os
+    system = platform.system().lower()
     base = os.path.join(os.path.dirname(__file__), "..", "..", "bin")
     if system == "windows":
         return os.path.join(base, "windows", "kube_solver.exe")
@@ -111,31 +94,30 @@ def _solver_path() -> str:
 def run_parallel_solves(
     tasks: list[tuple[Method, str]],
     workspace_root: str,
-) -> list[tuple[Method, SolveResult]]:
+):
     """
-    Run a flat list of (method, scramble) solve tasks in parallel, gated by
-    worker count and live memory usage.
+    Run a flat list of (method, scramble) solve tasks in parallel and
+    YIELD (method, SolveResult) as each future completes.
 
-    Returns a list of (method, SolveResult) in completion order.
-    Results are NOT in input order — callers must group by method.name.
+    This is a generator — callers iterate over it incrementally. Results
+    are NOT in input order; callers must group by method.name.
 
     Args:
         tasks:          Flat list of (method, scramble) pairs.
         workspace_root: Passed through to each worker's MethodRunner.
 
-    Returns:
-        List of (method, SolveResult) as futures complete.
+    Yields:
+        (method, SolveResult) as futures complete.
     """
     max_workers = _compute_max_workers()
     solver      = _solver_path()
-    results     = []
 
     print(f"[parallel] max_workers={max_workers} "
           f"(memory_fraction={_MEMORY_FRACTION}, "
           f"per_worker={_MEMORY_PER_WORKER}GB, "
-          f"buffer={_SAFETY_BUFFER_GB}GB)")
+          f"buffer={_SAFETY_BUFFER_GB}GB)",
+          flush=True)
 
-    # Map future → method so we can tag results on completion
     pending: dict[Future, Method] = {}
 
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
@@ -144,13 +126,8 @@ def run_parallel_solves(
 
         while not exhausted or pending:
 
-            # Submit new tasks while capacity and memory allow
-            while not exhausted:
-                if len(pending) >= max_workers:
-                    break
-                if not _memory_ok():
-                    break
-
+            # Fill worker slots up to max_workers
+            while not exhausted and len(pending) < max_workers:
                 try:
                     method, scramble = next(task_iter)
                 except StopIteration:
@@ -162,18 +139,26 @@ def run_parallel_solves(
                 )
                 pending[future] = method
 
-            # Reap any completed futures
-            completed = [f for f in pending if f.done()]
-            for future in completed:
-                method = pending.pop(future)
+            if not pending:
+                break
+
+            # Wait for at least one future to finish, then yield all that are done
+            # as_completed blocks until one is ready — no busy-polling
+            done_iter = as_completed(list(pending.keys()))
+            future = next(done_iter)  # blocks until one completes
+
+            method = pending.pop(future)
+            try:
+                result = future.result()
+                yield method, result
+            except Exception as e:
+                print(f"[WARN] Worker failed for '{method.name}': {e}", flush=True)
+
+            # Drain any others that also finished in the meantime
+            still_done = [f for f in list(pending.keys()) if f.done()]
+            for f in still_done:
+                m = pending.pop(f)
                 try:
-                    result = future.result()
-                    results.append((method, result))
+                    yield m, f.result()
                 except Exception as e:
-                    print(f"[WARN] Worker failed for method '{method.name}': {e}")
-
-            # If nothing completed and we're still waiting, poll
-            if not completed and pending:
-                time.sleep(_SPAWN_POLL_INTERVAL)
-
-    return results
+                    print(f"[WARN] Worker failed for '{m.name}': {e}", flush=True)
