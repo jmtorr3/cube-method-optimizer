@@ -16,6 +16,16 @@ min_constraints_per_step = 3
 max_constraints_per_step = 8
 target_count = 1000
 
+[discovery]
+workspace = "workspace/hillclimb"
+seed_workspace = "workspace/hillclimb"
+max_methods = 10000
+max_seed_methods = 250
+mutations_per_method = 18
+mutation_strength = 3
+verify_top_n = 20
+verify_num_scrambles = 10
+
 [parallel]
 enabled = true
 

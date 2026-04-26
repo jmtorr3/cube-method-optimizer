@@ -33,6 +33,7 @@ Thumbs.db
 
 # Ignore all scratch workspace (ephemeral)
 workspace/scratch/
+workspace/hillclimb/
 
 !workspace/stable/dsl/
 !workspace/stable/dsl/**
