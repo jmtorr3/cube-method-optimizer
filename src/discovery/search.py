@@ -13,6 +13,7 @@ import hashlib
 import heapq
 import itertools
 import os
+from collections import defaultdict
 from dataclasses import dataclass
 
 import numpy as np
@@ -39,6 +40,8 @@ DEFAULT_MAX_METHODS = DISCOVERY_CONFIG.get("max_methods", 10000)
 DEFAULT_MAX_SEED_METHODS = DISCOVERY_CONFIG.get("max_seed_methods", 250)
 DEFAULT_MUTATIONS_PER_METHOD = DISCOVERY_CONFIG.get("mutations_per_method", 18)
 DEFAULT_MUTATION_STRENGTH = DISCOVERY_CONFIG.get("mutation_strength", 3)
+DEFAULT_FEATURE_DIVERSITY_LIMIT = DISCOVERY_CONFIG.get("feature_diversity_limit", 50)
+DEFAULT_LOG_SCORED_CANDIDATES = DISCOVERY_CONFIG.get("log_scored_candidates", True)
 DEFAULT_VERIFY_TOP_N = DISCOVERY_CONFIG.get("verify_top_n", 20)
 DEFAULT_VERIFY_NUM_SCRAMBLES = DISCOVERY_CONFIG.get("verify_num_scrambles", 10)
 
@@ -51,6 +54,7 @@ class ScoredMethod:
     parent_hash: str = ""
     depth: int = 0
     source: str = "mutated"
+    feature_hash: str = ""
 
 
 class MethodQueue:
@@ -68,6 +72,49 @@ class MethodQueue:
 
     def __len__(self) -> int:
         return len(self._heap)
+
+
+class CandidateLogger:
+    """Append every oracle-scored candidate to a CSV for search diagnostics."""
+
+    def __init__(self, workspace_root: str):
+        out_dir = os.path.join(workspace_root, "data", "discovery")
+        os.makedirs(out_dir, exist_ok=True)
+        self.path = os.path.join(out_dir, "hillclimb_candidates.csv")
+        self._file = open(self.path, "w", newline="", encoding="utf-8")
+        self._writer = csv.DictWriter(
+            self._file,
+            fieldnames=[
+                "method_name",
+                "predicted_score",
+                "method_hash",
+                "parent_hash",
+                "depth",
+                "source",
+                "feature_hash",
+                "queued",
+                "reason",
+            ],
+        )
+        self._writer.writeheader()
+
+    def log(self, scored: ScoredMethod, queued: bool, reason: str):
+        self._writer.writerow(
+            {
+                "method_name": scored.method.name,
+                "predicted_score": f"{scored.score:.10f}",
+                "method_hash": scored.method_hash,
+                "parent_hash": scored.parent_hash,
+                "depth": scored.depth,
+                "source": scored.source,
+                "feature_hash": scored.feature_hash,
+                "queued": int(queued),
+                "reason": reason,
+            }
+        )
+
+    def close(self):
+        self._file.close()
 
 
 def _method_to_search_dsl(method: Method) -> str:
@@ -128,7 +175,16 @@ def get_method_score(method: Method, workspace_root: str = DEFAULT_WORKSPACE) ->
     return float(score)
 
 
-def get_method_scores(methods: list[Method], workspace_root: str = DEFAULT_WORKSPACE) -> list[float]:
+def feature_hash(feature_row: np.ndarray) -> str:
+    """Hash the exact ML feature vector seen by the model."""
+    text = ",".join(f"{value:.10g}" for value in feature_row)
+    return hashlib.md5(text.encode()).hexdigest()
+
+
+def get_method_scores_and_features(
+    methods: list[Method],
+    workspace_root: str = DEFAULT_WORKSPACE,
+) -> list[tuple[float, str]]:
     """Score methods in one model call when the artifact supports batching."""
     model = load_model(workspace_root)
     if model is None:
@@ -137,11 +193,19 @@ def get_method_scores(methods: list[Method], workspace_root: str = DEFAULT_WORKS
             "Run `python -m ml.train <workspace>` before search."
         )
 
-    if model.get("model_type") == "random_forest":
-        rows = np.asarray([extract_from_method(method) for method in methods])
-        return [float(score) for score in model["estimator"].predict(rows)]
+    rows = np.asarray([extract_from_method(method) for method in methods])
+    feature_hashes = [feature_hash(row) for row in rows]
 
-    return [_predict_from_model(model, extract_from_method(method)) for method in methods]
+    if model.get("model_type") == "random_forest":
+        scores = [float(score) for score in model["estimator"].predict(rows)]
+    else:
+        scores = [_predict_from_model(model, row) for row in rows]
+
+    return list(zip(scores, feature_hashes))
+
+
+def get_method_scores(methods: list[Method], workspace_root: str = DEFAULT_WORKSPACE) -> list[float]:
+    return [score for score, _ in get_method_scores_and_features(methods, workspace_root)]
 
 
 def add_methods(
@@ -152,6 +216,9 @@ def add_methods(
     parent_hash: str = "",
     depth: int = 0,
     source: str = "mutated",
+    feature_counts: dict[str, int] | None = None,
+    feature_diversity_limit: int | None = DEFAULT_FEATURE_DIVERSITY_LIMIT,
+    candidate_logger: CandidateLogger | None = None,
 ) -> list[ScoredMethod]:
     """
     Score and enqueue new unique methods.
@@ -174,10 +241,10 @@ def add_methods(
     if not unique_methods:
         return []
 
-    scores = get_method_scores(unique_methods, workspace_root)
+    scores_and_features = get_method_scores_and_features(unique_methods, workspace_root)
     added = []
 
-    for method, m_hash, score in zip(unique_methods, unique_hashes, scores):
+    for method, m_hash, (score, f_hash) in zip(unique_methods, unique_hashes, scores_and_features):
         scored = ScoredMethod(
             method=method,
             score=score,
@@ -185,7 +252,29 @@ def add_methods(
             parent_hash=parent_hash,
             depth=depth,
             source=source,
+            feature_hash=f_hash,
         )
+
+        queued = True
+        reason = "queued"
+        if (
+            source != "seed"
+            and feature_counts is not None
+            and feature_diversity_limit is not None
+            and feature_diversity_limit > 0
+            and feature_counts.get(f_hash, 0) >= feature_diversity_limit
+        ):
+            queued = False
+            reason = "feature_diversity_limit"
+
+        if candidate_logger is not None:
+            candidate_logger.log(scored, queued=queued, reason=reason)
+
+        if not queued:
+            continue
+
+        if feature_counts is not None:
+            feature_counts[f_hash] = feature_counts.get(f_hash, 0) + 1
         method_scores.push(scored)
         added.append(scored)
 
@@ -234,7 +323,16 @@ def output_group_stats(examined_methods: list[ScoredMethod], workspace_root: str
     os.makedirs(out_dir, exist_ok=True)
     path = os.path.join(out_dir, "hillclimb_results.csv")
 
-    fieldnames = ["rank", "method_name", "predicted_score", "method_hash", "parent_hash", "depth", "source"]
+    fieldnames = [
+        "rank",
+        "method_name",
+        "predicted_score",
+        "method_hash",
+        "parent_hash",
+        "depth",
+        "source",
+        "feature_hash",
+    ]
     rows = sorted(examined_methods, key=lambda item: item.score, reverse=True)
 
     with open(path, "w", newline="", encoding="utf-8") as f:
@@ -250,6 +348,7 @@ def output_group_stats(examined_methods: list[ScoredMethod], workspace_root: str
                     "parent_hash": scored.parent_hash,
                     "depth": scored.depth,
                     "source": scored.source,
+                    "feature_hash": scored.feature_hash,
                 }
             )
 
@@ -358,6 +457,8 @@ def find_method(
     workspace_root: str = DEFAULT_WORKSPACE,
     mutations_per_method: int = DEFAULT_MUTATIONS_PER_METHOD,
     mutation_strength: int = DEFAULT_MUTATION_STRENGTH,
+    feature_diversity_limit: int | None = DEFAULT_FEATURE_DIVERSITY_LIMIT,
+    log_scored_candidates: bool = DEFAULT_LOG_SCORED_CANDIDATES,
 ) -> list[ScoredMethod]:
     """
     Explore method mutations, always expanding the best predicted candidate.
@@ -372,48 +473,60 @@ def find_method(
 
     examined_hashes = set()
     queued_hashes = set()
+    feature_counts = defaultdict(int)
     method_scores = MethodQueue()
+    candidate_logger = CandidateLogger(workspace_root) if log_scored_candidates else None
 
-    add_methods(
-        method_scores,
-        methods,
-        queued_hashes,
-        workspace_root=workspace_root,
-        depth=0,
-        source="seed",
-    )
-
-    examined_methods = []
-
-    while len(examined_methods) < max_methods and len(method_scores) > 0:
-        scored = method_scores.pop()
-        if scored.method_hash in examined_hashes:
-            continue
-
-        examined_hashes.add(scored.method_hash)
-        if scored.source != "seed":
-            examined_methods.append(scored)
-            export_method(scored, workspace_root)
-
-            if len(examined_methods) % 500 == 0:
-                print(f"[progress] {len(examined_methods)}/{max_methods} oracle-scored methods", flush=True)
-
-        children = mutate_method_batch(
-            scored.method,
-            num_mutations=mutations_per_method,
-            mutation_strength=mutation_strength,
-        )
+    try:
         add_methods(
             method_scores,
-            children,
+            methods,
             queued_hashes,
             workspace_root=workspace_root,
-            parent_hash=scored.method_hash,
-            depth=scored.depth + 1,
+            depth=0,
+            source="seed",
+            feature_counts=feature_counts,
+            feature_diversity_limit=None,
+            candidate_logger=candidate_logger,
         )
 
-    output_group_stats(examined_methods, workspace_root)
-    return sorted(examined_methods, key=lambda item: item.score, reverse=True)
+        examined_methods = []
+
+        while len(examined_methods) < max_methods and len(method_scores) > 0:
+            scored = method_scores.pop()
+            if scored.method_hash in examined_hashes:
+                continue
+
+            examined_hashes.add(scored.method_hash)
+            if scored.source != "seed":
+                examined_methods.append(scored)
+                export_method(scored, workspace_root)
+
+                if len(examined_methods) % 500 == 0:
+                    print(f"[progress] {len(examined_methods)}/{max_methods} oracle-scored methods", flush=True)
+
+            children = mutate_method_batch(
+                scored.method,
+                num_mutations=mutations_per_method,
+                mutation_strength=mutation_strength,
+            )
+            add_methods(
+                method_scores,
+                children,
+                queued_hashes,
+                workspace_root=workspace_root,
+                parent_hash=scored.method_hash,
+                depth=scored.depth + 1,
+                feature_counts=feature_counts,
+                feature_diversity_limit=feature_diversity_limit,
+                candidate_logger=candidate_logger,
+            )
+
+        output_group_stats(examined_methods, workspace_root)
+        return sorted(examined_methods, key=lambda item: item.score, reverse=True)
+    finally:
+        if candidate_logger is not None:
+            candidate_logger.close()
 
 
 def _latest_evaluation_path(workspace_root: str) -> str | None:
@@ -513,6 +626,8 @@ def main():
         workspace_root=workspace,
         mutations_per_method=DEFAULT_MUTATIONS_PER_METHOD,
         mutation_strength=DEFAULT_MUTATION_STRENGTH,
+        feature_diversity_limit=DEFAULT_FEATURE_DIVERSITY_LIMIT,
+        log_scored_candidates=DEFAULT_LOG_SCORED_CANDIDATES,
     )
 
     best = results[0]

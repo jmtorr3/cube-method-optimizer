@@ -23,6 +23,8 @@ max_methods = 10000
 max_seed_methods = 250
 mutations_per_method = 18
 mutation_strength = 3
+feature_diversity_limit = 50
+log_scored_candidates = true
 verify_top_n = 20
 verify_num_scrambles = 10
 
