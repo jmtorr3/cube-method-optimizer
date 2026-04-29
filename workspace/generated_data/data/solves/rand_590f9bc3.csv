@@ -1,0 +1,11 @@
+scramble,orientation,step_0,step_1,step_2,step_3,step_4,total_moves
+U R' U2 B2 L2 U' F L R' F' B2 D' B F R' D' L2 B' U' F' D F2,x2,U' L2 U' L B' U',R2 B R U2 L F2 U2 R2 D L,L U2 L' B D F L' F' L B' U2 L',R2 B F' U R2 U' B' F R D2 R,U R' B2 R U' F2 U R' B2 R U' F2,51
+R' D U' R2 D U R L B2 R' B F' U F' R' B' R2 U' B2 D U',x2,U2 R F2 L' D' B,L' R U2 B L2 R' U' F D,B D2 B' F L' B D2 B' L2 F L F2,L2 F2 L B L2 B2 F U' B U' F' L F2 L2,F2 U R' B2 R U' F2 U R' B2 R U',53
+L2 R2 F' U R' L2 D R2 F' R2 F2 D' B' U D F2 B' U R B' D2 F',x2,U L' B2 F' L U',R B F' L R2 F' R2 U' L' F R',D' R B F' R' U' R' F R2 B' R' D2,U R B' L' F L U L' F' L U' B R' U',F2 U R' B2 R U' F2 U R' B2 R U',55
+B' L2 B R' L' U2 F' D F B R2 B2 D U L R' F2 R B2 U,x2,B U R U L' F',R2 B L' D R F' D2 R' U2 F D2 B,L B D' F2 D F D' F2 D B' L',B L' D' L D U' F2 U L B' U' F2 U,,42
+B' D B' F' U' D' R' U' R' D B' U2 R L' D2 R D' L R2 F2 B R,x2,R2 F' R2 U2 F2,L R' D2 B' D U R' B' U' R D',R' U' B' R D R' D2 B' L2 F L2 B2 U,D F' D2 B' D L2 D' B2 U B U2 B2 D,U R' B2 R U' F2 U R' B2 R U' F2,54
+L U' B2 D R' U L D2 F' L2 B2 L U' B2 D2 B' L' D2 B' D2 U2 R B2,x2,D' L2 B2 U2 F',L F2 D' F' U' F2 U2 L2 U',D' B R2 F' U F2 U' B U B2 D2 F',D F' D2 B F R B' F R F' R' F' D,F2 U R' B2 R U' F2 U R' B2 R U',51
+F B2 D B L F' B' L' U' D' R' F2 R2 U2 R2 D' R F2 R' U,x2,F2 D B L2 F',L2 D B2 R2 B2 D' L D2 L2,B2 R' D R D F2 R2 B2 U F U F L2,U' L2 F' R U2 R' F2 L F L' F2 L2 U,U R' B2 R U' F2 U R' B2 R U' F2,52
+L2 B' L2 U2 F B2 U B F D' U2 L R2 B2 F D' B F L' D' L D,x2,U' R U' B' L2 U2,B' F' D' B' R2 U' F D' B' L2 D L,L' B2 R2 B2 L D L' B R B' L D',D F D' F' D2 B2 R B' R B R2 B2 D2,,43
+F D' F D' R2 F2 U' L' U' L2 D2 B U2 F D' U R2 L' D R' B U,x2,B2 R2 D L B' U2 R',L B2 D' R' F' R B' R2 B' U F L',D R' B U2 R2 U' R' B U' B2 R D',U' L2 R U' R' F' L' U L U' F L2 U,U R' B2 R U' F2 U R' B2 R U' F2,56
+F' B L' B D' L' D B2 D R' L' B' D R2 U2 D2 F2 B D' R' L' D F',x2,R D R2 B L',R' D2 B2 D2 B' L' B2 D' B2 L' R,R' D' R B F' U2 R' F' U R B' R' F2 R2,R' F' R2 U' R' U R' F R' B' D' B R2,U R' B2 R U' F2 U R' B2 R U' F2,55

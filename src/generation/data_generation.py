@@ -738,13 +738,13 @@ def main():
         except Exception as e:
             print(f"[WARN] Failed to load {filename}: {e}")
 
-    methods = [m for m in methods if not _has_solves(workspace, m)]
+    # methods = [m for m in methods if not _has_solves(workspace, m)]
     # methods = [m for m in methods if _has_solves(workspace, m)]
     print(f"[INFO] Loaded {len(methods)} methods.")
 
-    print(f"Generating solves ({NUM_SCRAMBLES} scrambles)...")
-    scrambles = generate_scrambles(NUM_SCRAMBLES)
-    generate_solves(scrambles, methods, workspace_root=workspace)
+    # print(f"Generating solves ({NUM_SCRAMBLES} scrambles)...")
+    # scrambles = generate_scrambles(NUM_SCRAMBLES)
+    # generate_solves(scrambles, methods, workspace_root=workspace)
 
     print("[4/4] Evaluating solves...")
     evaluate_solves(methods, workspace_root=workspace)

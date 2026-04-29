@@ -1,0 +1,11 @@
+scramble,orientation,step_0,step_1,step_2,step_3,step_4,total_moves
+B2 F2 L2 U2 L' U' R2 U' F2 L F' R2 F' B L2 U L' D2 B2 L2 D',x2,U2 B2 L' U L2,R' B D B' D' F2 D2 F2 D2 R,B2 F D' B D' R F' R' D2 B' D B2,L D2 F R' D' R D F D' F2 D2 L',U L2 B2 R2 D R2 B2 L2,47
+L' U D2 R' L' F R2 F R2 F' D2 L2 D2 U2 L2 F2 U' B2 R' L' D' F2 U',x2,F2 D B2 L' D,D2 F' D2 U F2 D2 F D2 U',F' R B' R' F2 D' F' D2 R2 D' B R',U2 R' D' R U2 R' D R,R' F D U' R2 D' U F R,43
+B2 R' U' L F U' R U' L' B' L' R F2 B' R U' D L' B' R L D' L',x2,B L' B U2 L2 D2,F R B2 U' B D' U F' D,F' R2 U R' F U' R U2 F2 U2 F2,U B2 D B U F2 U F' R2 B L2 F',R2 F' R' D' F R F R2 F' R' D F,50
+F2 D2 L R B' F R2 F' B D2 U' L B' F' U' R2 B R2 F' B2 L',x2,D' F L2 D' U' L,B2 L U2 L' B R2 B' R,R F' U' R' F' U R2 F U2 R2 U' F2,,F2 U' F2 L2 B2 D2 R2 B2 L2 U' F2,37
+B F R2 B2 U F B2 L' U D2 L' U R D2 R' U2 D' F B2 D2 B L' F' R2 L2,x2,U2 B2 L' F' L U' F',D2 B L' D2 F2 D L D' R',F D2 B2 D' U' B D L' B D2 U F',D L F2 D' F D L D' L' F L' D',F' R F R F' D' F2 R' F' R D R F,53
+L' F' L B2 R2 F' D2 R' D' B2 L F L' U D L' D2 L F R' D,x2,F L U' B L2 D,B' L' F2 D' L' U' R' U2 L2 D2,U' R U' L F' L' U R' B U B' R,L D2 F2 D F' D' R' D R F' D2 L',F' R F R F' D' F2 R' F' R D R F,53
+D' U2 B2 L2 B L2 B F' R L' U F2 B2 L2 U L U L' R' B2 R' D2,x2,U' F2 D' L' B2 U',D' R2 B2 R2 D' L2 U' L2,D' U F2 D' B D2 R2 D2 B' D2 U' R2 F,U' F R' F2 R F U' F2 U' F2 U2,D' B F' R' D2 R' D' U F D' U' R2 B' F,52
+L2 D L F B2 D B2 U F' L' U2 L' F R2 F2 R2 D' L2 U' R L' U R F2,x2,D2 U2 R B L D,B' D2 B' D2 U2 B U2,D B F D R2 B D' R' B' F' R' D',L D2 F R' D' R D F D' F2 D2 L',F' D' F D B R2 F' R' F' R F2 R2 B',50
+F R B2 L' B2 L' D' B2 U2 F' L' U R' L F B2 D' L B' L2 B2 D2 U R F',x2,F D' F2 L F' D' L',D2 L2 F2 R' F L2 R B2 D2,B' D' L2 U B R2 B' L D F L B' D',D' F D R F' D R D' U' R U R2,D' B2 R D B R' B L2 U F' L F L D,55
+U2 D L' R2 U' R D2 F2 D' R2 D2 R2 U' R D' R' B R2 D F B D',x2,F' D2 B' L F L,U' B' R2 U2 R U' R B,D F R2 D2 B D B D' B' D R' F' D',B' D B' R2 B D' B' D R2 D' B2,R' F' R B F U2 F2 U' F U F U2 B',51

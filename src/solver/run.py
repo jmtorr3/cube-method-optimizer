@@ -32,6 +32,7 @@ def _solver_path() -> str:
 def main():
     dsl_file  = sys.argv[1] if len(sys.argv) > 1 else os.path.join("workspace", "stable", "dsl", "zz_method.dsl")
     workspace = sys.argv[2] if len(sys.argv) > 2 else os.path.join("workspace", "stable")
+    scramble = sys.argv[3] if len(sys.argv) > 3 else " ".join(Scramble.Cube3x3x3())
 
     method = method_from_file(dsl_file)
     runner = MethodRunner(

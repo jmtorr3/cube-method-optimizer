@@ -1,0 +1,11 @@
+scramble,orientation,step_0,step_1,step_2,step_3,total_moves
+L2 R2 F' U R' L2 D R2 F' R2 F2 D' B' U D F2 B' U R B' D2 F',x2,L D R2 U L2 B L D B2,L2 F D2 F D L' F L',R2 B2 R B' R B' F2 L2 B L2 R' B' R F2,R' D2 R B' U2 B R' D2 R B' U2 B,43
+B' D B' F' U' D' R' U' R' D B' U2 R L' D2 R D' L R2 F2 B R,x2,U R' F2 D' L' R' U2 B',L' D B' L B R2 U' B R2,R2 F U' L' B' L F' L R2 D F' D2 F2 L' F',,32
+F B2 D B L F' B' L' U' D' R' F2 R2 U2 R2 D' R F2 R' U,x2,R2 F' L2 U' R' D L' B',R2 U2 B' U' L' R2 D' L,R' D B' F2 D B' D' F2 D2 B2 D B2 D B2 R,,31
+U R' U2 B2 L2 U' F L R' F' B2 D' B F R' D' L2 B' U' F' D F2,x2,R' D B2 U2 B' L2 D U,L F2 R F U' L R' D' L2,U B' U2 L D' F L2 B' L D U' B F2 U L2 F,R' D2 R B' U2 B R' D2 R B' U2 B,45
+L2 B' L2 U2 F B2 U B F D' U2 L R2 B2 F D' B F L' D' L D,x2,L' R B2 U B R2 F L2 R2,L' D2 L2 R F' U R' F2 L',D' F R B' R2 D2 F' D2 R' B2 U2 B' U2 R2 D,R' D2 R B' U2 B R' D2 R B' U2 B,45
+R' D U' R2 D U R L B2 R' B F' U F' R' B' R2 U' B2 D U',x2,U2 R' F2 L B U B' F',B' R U' R' B,L' D U2 L2 F' L2 U2 R2 B2 R B2 D2 B' D L R,,29
+F' B L' B D' L' D B2 D R' L' B' D R2 U2 D2 F2 B D' R' L' D F',x2,D' L2 R' B' U B F R2 D,D2 R2 U' B R B D R,L D' L' R' B' D2 R' B R D' L D2 B L' R,R' D2 R B' U2 B R' D2 R B' U2 B,44
+B' L2 B R' L' U2 F' D F B R2 B2 D U L R' F2 R B2 U,x2,B F' D2 R' U' L' B2 F',R' B2 L R2 F' U F' L' R',L2 F' L' R' B D L' B' D R F' R2 B' R2 D' F',B' U2 B R' D2 R B' U2 B R' D2 R,45
+L U' B2 D R' U L D2 F' L2 B2 L U' B2 D2 B' L' D2 B' D2 U2 R B2,x2,B R' B L2 U' B2 U2 L',R' D B' L D2 R F2 D,D2 R U R B D' R2 F D' B' D2 F' D U' B R2,,32
+F D' F D' R2 F2 U' L' U' L2 D2 B U2 F D' U R2 L' D R' B U,x2,R' B L2 R2 B L D R',L' D R' B2 L B R2 U' R',U B' L2 D2 F R2 D' L B' L B L2 F' L2 B U,B' U2 B R' D2 R B' U2 B R' D2 R,45

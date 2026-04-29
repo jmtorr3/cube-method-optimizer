@@ -1,0 +1,5 @@
+method,total_solves,avg_total_moves,num_steps,avg_moves_per_step,num_algs
+ZZ,150,51.15,7,7.31,32
+CFOP,100,51.44,7,7.35,88
+BEGINNERS,50,76.8,13,5.91,0
+Roux,50,43.18,6,7.2,44
