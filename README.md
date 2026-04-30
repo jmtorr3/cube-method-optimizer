@@ -164,8 +164,21 @@ This requires:
 <workspace>/data/methods/methods.csv
 ```
 
-The command prints each method's actual score, predicted score, absolute error,
-percentage error, and aggregate MAE/MAPE-style summary statistics.
+If a binary is missing for your platform, build it from
+[kubesolver](https://github.com/kuba97531/kubesolver):
+
+```bash
+git clone https://github.com/kuba97531/kubesolver.git /tmp/kubesolver
+cd /tmp/kubesolver
+make BUILD=RELEASE -j5            # Linux
+make BUILD=RELEASE CC=gcc-15 -j5  # macOS — needs Homebrew gcc for OpenMP
+```
+
+Then copy `kube_solver.out` into the matching `bin/<platform>/kube_solver`
+(rename, drop the extension, `chmod +x`). On macOS the trailing `strip -s`
+step in the upstream makefile fails harmlessly — the binary is already linked
+by then.
+
 
 ## Discovery
 
