@@ -2,12 +2,13 @@
 run.py — Entry point for running a single solve from the command line.
 
 Usage:
-    python -m solver.run <dsl_file> [workspace]
+    python -m solver.run <dsl_file> [workspace] [--scramble SCRAMBLE]
 
     workspace defaults to workspace/stable
+    scramble defaults to a random 3x3 scramble
 """
 
-import sys
+import argparse
 import os
 import platform
 
@@ -29,18 +30,44 @@ def _solver_path() -> str:
         return os.path.join(base, "linux", "kube_solver")
 
 
-def main():
-    dsl_file  = sys.argv[1] if len(sys.argv) > 1 else os.path.join("workspace", "stable", "dsl", "zz_method.dsl")
-    workspace = sys.argv[2] if len(sys.argv) > 2 else os.path.join("workspace", "stable")
-    scramble = sys.argv[3] if len(sys.argv) > 3 else " ".join(Scramble.Cube3x3x3())
+def _random_scramble() -> str:
+    return " ".join(Scramble.Cube3x3x3())
 
-    method = method_from_file(dsl_file)
+
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Run one DSL method solve against a random or provided scramble."
+    )
+    parser.add_argument(
+        "dsl_file",
+        nargs="?",
+        default=os.path.join("workspace", "stable", "dsl", "zz_method.dsl"),
+        help="Path to the DSL method file.",
+    )
+    parser.add_argument(
+        "workspace",
+        nargs="?",
+        default=os.path.join("workspace", "stable"),
+        help="Workspace root containing alg caches and generated data.",
+    )
+    parser.add_argument(
+        "-s",
+        "--scramble",
+        help="Custom scramble to solve, e.g. \"R U R' U'\".",
+    )
+    return parser.parse_args()
+
+
+def main():
+    args = _parse_args()
+    scramble = args.scramble or _random_scramble()
+
+    method = method_from_file(args.dsl_file)
     runner = MethodRunner(
         solver_path=_solver_path(),
-        workspace_root=workspace,
+        workspace_root=args.workspace,
         timeout=TIMEOUT,
     )
-    scramble = " ".join(Scramble.Cube3x3x3())
     result = runner.run(method, scramble)
     print(format_solve_result(result))
 

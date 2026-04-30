@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
-METHOD_NAME="mut_756596dc"
-FILE_PATH="../workspace/scratch/data/solves/${METHOD_NAME}.csv"
+METHOD_NAME="hill_adc6d492"
+FILE_PATH="../workspace/hillclimb/data/solves/${METHOD_NAME}.csv"
 
 INDEX="$1"
 

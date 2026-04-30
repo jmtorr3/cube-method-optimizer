@@ -34,7 +34,7 @@ cube_solver/
 ## Entry points
 
 Run a single solve:
-    python -m solver.run <dsl_file> [workspace]
+    python -m solver.run <dsl_file> [workspace] [--scramble SCRAMBLE]
 
 Generate data:
     python -m generation.data_generation [workspace]
@@ -111,6 +111,12 @@ python -m solver.run workspace/stable/dsl/zz_method.dsl
 ```
 
 If everything is set up correctly, this should execute a solve and print the result.
+
+To run against a specific scramble:
+
+```bash
+python -m solver.run workspace/stable/dsl/zz_method.dsl --scramble "R U R' U'"
+```
 
 
 ### 7. (Optional) Run tests
